@@ -204,7 +204,8 @@ def load_video_frames(
         for p in os.listdir(jpg_folder)
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
     ]
-    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    # frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    frame_names.sort()
     num_frames = len(frame_names)
     if num_frames == 0:
         raise RuntimeError(f"no images found in {jpg_folder}")
@@ -233,7 +234,7 @@ def load_video_frames(
     # normalize by mean and std
     images -= img_mean
     images /= img_std
-    return images, video_height, video_width
+    return images, video_height, video_width, frame_names
 
 
 def fill_holes_in_mask_scores(mask, max_area):

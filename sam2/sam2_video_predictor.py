@@ -46,7 +46,7 @@ class SAM2VideoPredictor(SAM2Base):
     ):
         """Initialize a inference state."""
         compute_device = self.device  # device of the model
-        images, video_height, video_width = load_video_frames(
+        images, video_height, video_width, frame_names = load_video_frames(
             video_path=video_path,
             image_size=self.image_size,
             offload_video_to_cpu=offload_video_to_cpu,
@@ -104,7 +104,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
         self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
-        return inference_state
+        return inference_state, frame_names
 
     @classmethod
     def from_pretrained(cls, model_id: str, **kwargs) -> "SAM2VideoPredictor":
