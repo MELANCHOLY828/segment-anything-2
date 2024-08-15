@@ -13,8 +13,9 @@ from tqdm import tqdm
 
 from sam2.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
 from sam2.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames
-
-
+import numpy as np
+from PIL import Image
+import os
 class SAM2VideoPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
 
@@ -959,3 +960,32 @@ class SAM2VideoPredictor(SAM2Base):
             non_cond_frame_outputs.pop(t, None)
             for obj_output_dict in inference_state["output_dict_per_obj"].values():
                 obj_output_dict["non_cond_frame_outputs"].pop(t, None)
+    def forward(self, video_dir, last_dir, coors):
+        state, frame_names = self.init_state(video_dir)
+        ann_frame_idx = 0  # the frame index we interact with
+        ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+        # root = tk.Tk()
+        # app = ImageApp(root, os.path.join(video_dir, frame_names[ann_frame_idx]))
+        # root.mainloop()
+        # coors = app.coors
+        # app.root.destroy()
+        points = np.array([[coors[0], coors[1]], [coors[2], coors[3]]], dtype=np.float32)
+        # for labels, `1` means positive click and `0` means negative click
+        labels = np.array([1, 1], np.int32)
+
+        frame_idx, object_ids, masks = self.add_new_points_or_box(
+            inference_state=state,
+            frame_idx=ann_frame_idx,
+            obj_id=ann_obj_id,
+            points=points,
+            labels=labels,
+        )
+        mask = masks[0] < 0
+        mask = mask.squeeze(0)
+        mask_img = Image.fromarray((mask.cpu().numpy() * 255).astype('uint8'))
+        mask_img.save(os.path.join(last_dir, frame_names[ann_frame_idx]))
+        for frame_idx, object_ids, masks in self.propagate_in_video(state):
+            mask = masks[0] < 0
+            mask = mask.squeeze(0)
+            mask_img = Image.fromarray((mask.cpu().numpy() * 255).astype('uint8'))
+            mask_img.save(os.path.join(last_dir, frame_names[frame_idx]))
