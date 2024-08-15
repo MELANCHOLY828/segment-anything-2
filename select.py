@@ -13,13 +13,21 @@ class ImageApp:
 
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
         self.canvas.bind("<Button-1>", self.get_pixel)
-
+        self.coors = []
+        self.click_count = 0
     def get_pixel(self, event):
+        
         x, y = event.x, event.y
         pixel = self.image.getpixel((x, y))
         print(f"Pixel at ({x}, {y}): {pixel}")
+        self.coors.append(x)
+        self.coors.append(y)
+        self.click_count += 1
+        if self.click_count == 2:
+            self.root.quit()
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = ImageApp(root, 'E:/work/data/my/toy/images/frame_0000.jpg')
     root.mainloop()
+    print(app.coors)

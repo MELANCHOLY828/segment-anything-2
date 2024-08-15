@@ -3,7 +3,31 @@ from sam2.sam2_video_predictor import SAM2VideoPredictor
 import os
 predictor = SAM2VideoPredictor.from_pretrained("facebook/sam2-hiera-large")
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageTk
+import tkinter as tk
+class ImageApp:
+    def __init__(self, root, image_path):
+        self.root = root
+        self.image_path = image_path
+        self.image = Image.open(image_path)
+        self.tk_image = ImageTk.PhotoImage(self.image)
+        self.click_count = 0
+        self.coors = []
+        self.canvas = tk.Canvas(root, width=self.image.width, height=self.image.height)
+        self.canvas.pack()
+
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
+        self.canvas.bind("<Button-1>", self.get_pixel)
+
+    def get_pixel(self, event):
+        x, y = event.x, event.y
+        pixel = self.image.getpixel((x, y))
+        self.coors.append(x)
+        self.coors.append(y)
+        self.click_count += 1
+        if self.click_count == 2:
+            self.root.quit()
+
 def getmask(video_dir):
     last_dir = os.path.join(os.path.dirname(video_dir), 'mask')
     if not os.path.exists(last_dir):
@@ -13,8 +37,12 @@ def getmask(video_dir):
 
         ann_frame_idx = 0  # the frame index we interact with
         ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
-
-        points = np.array([[270, 364], [419, 498]], dtype=np.float32)
+        root = tk.Tk()
+        app = ImageApp(root, os.path.join(video_dir, frame_names[ann_frame_idx]))
+        root.mainloop()
+        coors = app.coors
+        app.root.destroy()
+        points = np.array([[coors[0], coors[1]], [coors[2], coors[3]]], dtype=np.float32)
         # for labels, `1` means positive click and `0` means negative click
         labels = np.array([1, 1], np.int32)
 
