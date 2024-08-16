@@ -969,7 +969,7 @@ class SAM2VideoPredictor(SAM2Base):
         # root.mainloop()
         # coors = app.coors
         # app.root.destroy()
-        points = np.array([[coors[0], coors[1]], [coors[2], coors[3]]], dtype=np.float32)
+        points = np.array([[coors[0].item(), coors[1].item()], [coors[2].item(), coors[3].item()]], dtype=np.float32)
         # for labels, `1` means positive click and `0` means negative click
         labels = np.array([1, 1], np.int32)
 
