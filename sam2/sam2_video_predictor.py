@@ -104,7 +104,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
-        self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
+        self._get_image_feature(inference_state, frame_idx=0, batch_size=1)  #cached_features 有更新
         return inference_state, frame_names
 
     @classmethod
@@ -969,7 +969,7 @@ class SAM2VideoPredictor(SAM2Base):
         # root.mainloop()
         # coors = app.coors
         # app.root.destroy()
-        points = np.array([[coors[0].item(), coors[1].item()], [coors[2].item(), coors[3].item()]], dtype=np.float32)
+        points = np.array([[coors[0], coors[1]], [coors[2], coors[3]]], dtype=np.float32)
         # for labels, `1` means positive click and `0` means negative click
         labels = np.array([1, 1], np.int32)
 
