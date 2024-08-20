@@ -231,6 +231,7 @@ class Attention(nn.Module):
         self.kv_in_dim = kv_in_dim if kv_in_dim is not None else embedding_dim
         self.internal_dim = embedding_dim // downsample_rate
         self.num_heads = num_heads
+        self.ALLOW_ALL_KERNELS = ALLOW_ALL_KERNELS
         assert (
             self.internal_dim % num_heads == 0
         ), "num_heads must divide embedding_dim."
@@ -251,7 +252,7 @@ class Attention(nn.Module):
         b, n_heads, n_tokens, c_per_head = x.shape
         x = x.transpose(1, 2)
         return x.reshape(b, n_tokens, n_heads * c_per_head)  # B x N_tokens x C
-
+    
     def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
         # Input projections
         q = self.q_proj(q)
@@ -265,26 +266,43 @@ class Attention(nn.Module):
 
         dropout_p = self.dropout_p if self.training else 0.0
         # Attention
-        try:
-            with sdp_kernel_context(dropout_p):
-                out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        except Exception as e:
-            # Fall back to all kernels if the Flash attention kernel fails
-            warnings.warn(
-                f"Flash Attention kernel failed due to: {e}\nFalling back to all available "
-                f"kernels for scaled_dot_product_attention (which may have a slower speed).",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            global ALLOW_ALL_KERNELS
-            ALLOW_ALL_KERNELS = True
-            out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        # if some_condition_to_check_flash_attention_support():
+        #     with sdp_kernel_context(dropout_p):
+        #         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        # else:
+        #     warnings.warn(
+        #         f"Flash Attention kernel failed due to: {e}\nFalling back to all available "
+        #         f"kernels for scaled_dot_product_attention (which may have a slower speed).",
+        #         category=UserWarning,
+        #         stacklevel=2,
+        #     )
+        #     # global ALLOW_ALL_KERNELS
+        #     self.ALLOW_ALL_KERNELS = True
+        #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        # try:
+        #     with sdp_kernel_context(dropout_p):
+        #         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        # except Exception as e:
+        #     # Fall back to all kernels if the Flash attention kernel fails
+        #     warnings.warn(
+        #         f"Flash Attention kernel failed due to: {e}\nFalling back to all available "
+        #         f"kernels for scaled_dot_product_attention (which may have a slower speed).",
+        #         category=UserWarning,
+        #         stacklevel=2,
+        #     )
+        #     global ALLOW_ALL_KERNELS
+        #     ALLOW_ALL_KERNELS = True
+        #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
 
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 
         return out
-
+def some_condition_to_check_flash_attention_support():
+    # 在这里插入适当的逻辑来检查 Flash Attention 是否支持。
+    # 例如，可能是基于输入的形状、设备、dtype 等等。
+    return True  # 或者 False，取决于条件
 
 class RoPEAttention(Attention):
     """Attention with rotary position encoding."""
@@ -307,7 +325,8 @@ class RoPEAttention(Attention):
         freqs_cis = self.compute_cis(end_x=feat_sizes[0], end_y=feat_sizes[1])
         self.freqs_cis = freqs_cis
         self.rope_k_repeat = rope_k_repeat
-
+        self.ALLOW_ALL_KERNELS = ALLOW_ALL_KERNELS
+    @torch.jit.ignore
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0
     ) -> Tensor:
@@ -339,20 +358,33 @@ class RoPEAttention(Attention):
 
         dropout_p = self.dropout_p if self.training else 0.0
         # Attention
-        try:
+        if some_condition_to_check_flash_attention_support():
             with sdp_kernel_context(dropout_p):
-                out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        except Exception as e:
-            # Fall back to all kernels if the Flash attention kernel fails
+                        out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        else:
             warnings.warn(
                 f"Flash Attention kernel failed due to: {e}\nFalling back to all available "
                 f"kernels for scaled_dot_product_attention (which may have a slower speed).",
                 category=UserWarning,
                 stacklevel=2,
             )
-            global ALLOW_ALL_KERNELS
-            ALLOW_ALL_KERNELS = True
+            # global ALLOW_ALL_KERNELS
+            self.ALLOW_ALL_KERNELS = True
             out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        # try:
+        #     with sdp_kernel_context(dropout_p):
+        #         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        # except Exception as e:
+        #     # Fall back to all kernels if the Flash attention kernel fails
+        #     warnings.warn(
+        #         f"Flash Attention kernel failed due to: {e}\nFalling back to all available "
+        #         f"kernels for scaled_dot_product_attention (which may have a slower speed).",
+        #         category=UserWarning,
+        #         stacklevel=2,
+        #     )
+        #     global ALLOW_ALL_KERNELS
+        #     ALLOW_ALL_KERNELS = True
+        #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
 
         out = self._recombine_heads(out)
         out = self.out_proj(out)

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Dict
 
 import numpy as np
 
@@ -37,8 +37,9 @@ class PositionEmbeddingSine(nn.Module):
             scale = 2 * math.pi
         self.scale = scale
 
-        self.cache = {}
-
+        # self.cache = {}
+        self.cache: Dict[str, torch.Tensor] = {}
+        self.cache["empty"] = torch.tensor(0)
     def _encode_xy(self, x, y):
         # The positions are expected to be normalized
         assert len(x) == len(y) and x.ndim == y.ndim == 1
@@ -77,7 +78,8 @@ class PositionEmbeddingSine(nn.Module):
 
     @torch.no_grad()
     def forward(self, x: torch.Tensor):
-        cache_key = (x.shape[-2], x.shape[-1])
+        # cache_key = torch.tensor((x.shape[-2], x.shape[-1]))
+        cache_key = f"{x.shape[-2]}_{x.shape[-1]}"
         if cache_key in self.cache:
             return self.cache[cache_key][None].repeat(x.shape[0], 1, 1, 1)
         y_embed = (
@@ -129,8 +131,10 @@ class PositionEmbeddingRandom(nn.Module):
     def _pe_encoding(self, coords: torch.Tensor) -> torch.Tensor:
         """Positionally encode points that are normalized to [0,1]."""
         # assuming coords are in [0, 1]^2 square and have d_1 x ... x d_n x 2 shape
+        # import pdb
+        # pdb.set_trace() 
         coords = 2 * coords - 1
-        coords = coords @ self.positional_encoding_gaussian_matrix
+        coords = coords @ self.positional_encoding_gaussian_matrix.to(coords)
         coords = 2 * np.pi * coords
         # outputs d_1 x ... x d_n x C shape
         return torch.cat([torch.sin(coords), torch.cos(coords)], dim=-1)
@@ -138,7 +142,7 @@ class PositionEmbeddingRandom(nn.Module):
     def forward(self, size: Tuple[int, int]) -> torch.Tensor:
         """Generate positional encoding for a grid of the specified size."""
         h, w = size
-        device: Any = self.positional_encoding_gaussian_matrix.device
+        device: torch.device = self.positional_encoding_gaussian_matrix.device
         grid = torch.ones((h, w), device=device, dtype=torch.float32)
         y_embed = grid.cumsum(dim=0) - 0.5
         x_embed = grid.cumsum(dim=1) - 0.5

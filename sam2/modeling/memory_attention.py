@@ -79,7 +79,7 @@ class MemoryAttentionLayer(nn.Module):
         )
         tgt = tgt + self.dropout2(tgt2)
         return tgt
-
+    @torch.jit.ignore
     def forward(
         self,
         tgt,
@@ -115,7 +115,7 @@ class MemoryAttention(nn.Module):
         self.norm = nn.LayerNorm(d_model)
         self.pos_enc_at_input = pos_enc_at_input
         self.batch_first = batch_first
-
+    @torch.jit.ignore
     def forward(
         self,
         curr: torch.Tensor,  # self-attention inputs
@@ -152,13 +152,20 @@ class MemoryAttention(nn.Module):
             if isinstance(layer.cross_attn_image, RoPEAttention):
                 kwds = {"num_k_exclude_rope": num_obj_ptr_tokens}
 
-            output = layer(
-                tgt=output,
-                memory=memory,
-                pos=memory_pos,
-                query_pos=curr_pos,
-                **kwds,
-            )
+                output = layer(
+                    tgt=output,
+                    memory=memory,
+                    pos=memory_pos,
+                    query_pos=curr_pos,
+                    num_k_exclude_rope = num_obj_ptr_tokens,
+                )
+            else:
+                output = layer(
+                    tgt=output,
+                    memory=memory,
+                    pos=memory_pos,
+                    query_pos=curr_pos,
+                )
         normed_output = self.norm(output)
 
         if self.batch_first:

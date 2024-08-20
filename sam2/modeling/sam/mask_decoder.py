@@ -116,7 +116,7 @@ class MaskDecoder(nn.Module):
         multimask_output: bool,
         repeat_image: bool,
         high_res_features: Optional[List[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ):
         """
         Predict masks given image and prompt embeddings.
 
@@ -173,7 +173,7 @@ class MaskDecoder(nn.Module):
         dense_prompt_embeddings: torch.Tensor,
         repeat_image: bool,
         high_res_features: Optional[List[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ):
         """Predicts masks. See 'forward' for more details."""
         # Concatenate output tokens
         s = 0
@@ -206,6 +206,8 @@ class MaskDecoder(nn.Module):
         assert (
             image_pe.size(0) == 1
         ), "image_pe should have size 1 in batch dim (from `get_dense_pe()`)"
+        # import pdb
+        # pdb.set_trace() 
         pos_src = torch.repeat_interleave(image_pe, tokens.shape[0], dim=0)
         b, c, h, w = src.shape
 
@@ -219,16 +221,32 @@ class MaskDecoder(nn.Module):
         if not self.use_high_res_features:
             upscaled_embedding = self.output_upscaling(src)
         else:
-            dc1, ln1, act1, dc2, act2 = self.output_upscaling
-            feat_s0, feat_s1 = high_res_features
+            # dc1, ln1, act1, dc2, act2 = self.output_upscaling
+            dc1 = self.output_upscaling[0]
+            ln1 = self.output_upscaling[1]
+            act1 = self.output_upscaling[2]
+            dc2 = self.output_upscaling[3]
+            act2 = self.output_upscaling[4]
+            if high_res_features is not None:
+                feat_s0 = high_res_features[0]
+                feat_s1 = high_res_features[1]
+            else:
+                feat_s0 = torch.zeros_like(image_embeddings)  # 或者根据实际情况初始化
+                feat_s1 = torch.zeros_like(image_embeddings)
+            # feat_s0, feat_s1 = high_res_features
             upscaled_embedding = act1(ln1(dc1(src) + feat_s1))
             upscaled_embedding = act2(dc2(upscaled_embedding) + feat_s0)
 
         hyper_in_list: List[torch.Tensor] = []
-        for i in range(self.num_mask_tokens):
-            hyper_in_list.append(
-                self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :])
-            )
+        # for i in range(self.num_mask_tokens):
+        #     hyper_in_list.append(
+        #         self.output_hypernetworks_mlps[i](mask_tokens_out[:, i, :])
+        #     )
+        for i, mlp in enumerate(self.output_hypernetworks_mlps):
+            if i < self.num_mask_tokens:  # 添加条件来确保索引不会超过范围
+                hyper_in_list.append(
+                    mlp(mask_tokens_out[:, i, :])
+                )
         hyper_in = torch.stack(hyper_in_list, dim=1)
         b, c, h, w = upscaled_embedding.shape
         masks = (hyper_in @ upscaled_embedding.view(b, c, h * w)).view(b, -1, h, w)

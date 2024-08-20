@@ -160,7 +160,7 @@ class MemoryEncoder(nn.Module):
         pix_feat: torch.Tensor,
         masks: torch.Tensor,
         skip_mask_sigmoid: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ):
         ## Process masks
         # sigmoid, so that less domain shift from gt masks which are bool
         if not skip_mask_sigmoid:
@@ -177,5 +177,14 @@ class MemoryEncoder(nn.Module):
         x = self.out_proj(x)
 
         pos = self.position_encoding(x).to(x.dtype)
-
-        return {"vision_features": x, "vision_pos_enc": [pos]}
+        output = {
+            "vision_features": x,
+            "vision_pos_enc": pos,
+        }
+        return output
+        # 对字典中的每个值进行类型检查
+        # assert isinstance(output["vision_features"], torch.Tensor), "vision_features should be a Tensor"
+        # assert isinstance(output["vision_pos_enc"], list) and all(isinstance(item, torch.Tensor) for item in output["vision_pos_enc"]), "vision_pos_enc should be a list of Tensors"
+        # assert isinstance(output["vision_features"], torch.Tensor), "vision_features should be a Tensor"
+        # assert isinstance(output["vision_pos_enc"], list) and all(isinstance(item, torch.Tensor) for item in output["vision_pos_enc"]), "vision_pos_enc should be a list of Tensors"
+        # return {"vision_features": x, "vision_pos_enc": [pos]}

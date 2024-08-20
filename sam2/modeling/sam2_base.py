@@ -188,16 +188,22 @@ class SAM2Base(torch.nn.Module):
                 dynamic=False,
             )
 
+    # @property
+    # def device(self):
+    #     return next(self.parameters()).device
     @property
-    def device(self):
-        return next(self.parameters()).device
-
-    def forward(self, *args, **kwargs):
+    def device(self) -> torch.device:
+        return self.maskmem_tpos_enc.device
+    # def forward(self, *args, **kwargs):
+    #     raise NotImplementedError(
+    #         "Please use the corresponding methods in SAM2VideoPredictor for inference."
+    #         "See notebooks/video_predictor_example.ipynb for an example."
+    #     )
+    def forward(self, inpt1, inpt2):
         raise NotImplementedError(
             "Please use the corresponding methods in SAM2VideoPredictor for inference."
             "See notebooks/video_predictor_example.ipynb for an example."
         )
-
     def _build_sam_heads(self):
         """Build SAM-style prompt encoder and mask decoder."""
         self.sam_prompt_embed_dim = self.hidden_dim

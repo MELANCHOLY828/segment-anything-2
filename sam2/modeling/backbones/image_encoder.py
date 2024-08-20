@@ -34,13 +34,25 @@ class ImageEncoder(nn.Module):
             features, pos = features[: -self.scalp], pos[: -self.scalp]
 
         src = features[-1]
+
         output = {
             "vision_features": src,
-            "vision_pos_enc": pos,
-            "backbone_fpn": features,
+            "vision_pos_enc_0": pos[0],
+            "vision_pos_enc_1": pos[1],
+            "vision_pos_enc_2": pos[2],
+            "backbone_fpn_0": features[0],
+            "backbone_fpn_1": features[1],
+            "backbone_fpn_2": features[2],
         }
+        # assert isinstance(output["vision_features"], torch.Tensor)
+        # assert isinstance(output["vision_pos_enc"], list) and all(isinstance(item, torch.Tensor) for item in output["vision_pos_enc"]), "vision_pos_enc should be a list of Tensors"
+        # assert isinstance(output["backbone_fpn"], list) and all(isinstance(item, torch.Tensor) for item in output["backbone_fpn"]), "backbone_fpn should be a list of Tensors"
         return output
-
+# add ModuleInterface 
+@torch.jit.interface
+class ModuleInterface(torch.nn.Module):
+    def forward(self, input: torch.Tensor) -> torch.Tensor: # `input` has a same name in Sequential forward
+        pass
 
 class FpnNeck(nn.Module):
     """
@@ -100,18 +112,24 @@ class FpnNeck(nn.Module):
 
     def forward(self, xs: List[torch.Tensor]):
 
-        out = [None] * len(self.convs)
-        pos = [None] * len(self.convs)
+        out = [torch.zeros_like(xs[0])] * len(self.convs)
+        pos = [torch.zeros_like(xs[0])] * len(self.convs)
         assert len(xs) == len(self.convs)
         # fpn forward pass
         # see https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/backbone/fpn.py
-        prev_features = None
+        # prev_features = None
+        prev_features = torch.zeros_like(xs[0])
         # forward in top-down order (from low to high resolution)
+        flag = False
+
         n = len(self.convs) - 1
         for i in range(n, -1, -1):
+            # x = torch.gather(xs, 0, torch.tensor([i]))
             x = xs[i]
-            lateral_features = self.convs[n - i](x)
-            if i in self.fpn_top_down_levels and prev_features is not None:
+            submodule : ModuleInterface = self.convs[n - i]
+            lateral_features = submodule.forward(x)
+            # lateral_features = self.convs[n - i](x)
+            if i in self.fpn_top_down_levels and flag:
                 top_down_features = F.interpolate(
                     prev_features.to(dtype=torch.float32),
                     scale_factor=2.0,
@@ -126,8 +144,34 @@ class FpnNeck(nn.Module):
                     prev_features /= 2
             else:
                 prev_features = lateral_features
+                flag = True
             x_out = prev_features
             out[i] = x_out
             pos[i] = self.position_encoding(x_out).to(x_out.dtype)
 
         return out, pos
+        # n = len(self.convs) - 1
+        # out = [None] * len(xs)
+        # pos = [None] * len(xs)
+        # prev_features = None
+        # for i, x in enumerate((xs)):  # 使用 enumerate 获取索引和元素
+        #     lateral_features = self.convs[n - i](x)  # 使用索引访问 self.convs
+        #     if i in self.fpn_top_down_levels and prev_features is not None:
+        #         top_down_features = F.interpolate(
+        #             prev_features.to(dtype=torch.float32),
+        #             scale_factor=2.0,
+        #             mode=self.fpn_interp_model,
+        #             align_corners=(
+        #                 None if self.fpn_interp_model == "nearest" else False
+        #             ),
+        #             antialias=False,
+        #         )
+        #         prev_features = lateral_features + top_down_features
+        #         if self.fuse_type == "avg":
+        #             prev_features /= 2
+        #     else:
+        #         prev_features = lateral_features
+        #     x_out = prev_features
+        #     out[i] = x_out
+        #     pos[i] = self.position_encoding(x_out).to(x_out.dtype)
+        # return out, pos

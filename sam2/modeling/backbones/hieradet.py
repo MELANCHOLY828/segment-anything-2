@@ -10,7 +10,7 @@ from typing import List, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from typing import Optional, Callable 
 from sam2.modeling.backbones.utils import (
     PatchEmbed,
     window_partition,
@@ -19,8 +19,8 @@ from sam2.modeling.backbones.utils import (
 
 from sam2.modeling.sam2_utils import DropPath, MLP
 
-
-def do_pool(x: torch.Tensor, pool: nn.Module, norm: nn.Module = None) -> torch.Tensor:
+@torch.jit.ignore
+def do_pool(x: torch.Tensor, pool = None, norm = None) -> torch.Tensor:
     if pool is None:
         return x
     # (B, H, W, C) -> (B, C, H, W)
@@ -34,13 +34,13 @@ def do_pool(x: torch.Tensor, pool: nn.Module, norm: nn.Module = None) -> torch.T
     return x
 
 
-class MultiScaleAttention(nn.Module):
+class MultiScaleAttention(torch.nn.Module):
     def __init__(
         self,
         dim: int,
         dim_out: int,
         num_heads: int,
-        q_pool: nn.Module = None,
+        q_pool: torch.nn.Module = None,
     ):
         super().__init__()
 
@@ -48,8 +48,8 @@ class MultiScaleAttention(nn.Module):
         self.dim_out = dim_out
         self.num_heads = num_heads
         self.q_pool = q_pool
-        self.qkv = nn.Linear(dim, dim_out * 3)
-        self.proj = nn.Linear(dim_out, dim_out)
+        self.qkv = torch.nn.Linear(dim, dim_out * 3)
+        self.proj = torch.nn.Linear(dim_out, dim_out)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, H, W, _ = x.shape
@@ -59,8 +59,13 @@ class MultiScaleAttention(nn.Module):
         q, k, v = torch.unbind(qkv, 2)
 
         # Q pooling (for downsample at stage changes)
-        if self.q_pool:
-            q = do_pool(q.reshape(B, H, W, -1), self.q_pool)
+        if self.q_pool is not None:
+            q = q.reshape(B, H, W, -1)
+            q = q.permute(0, 3, 1, 2)
+            q = self.q_pool(q)
+            q = q.permute(0, 2, 3, 1)
+
+            # q = do_pool(q.reshape(B, H, W, -1), self.q_pool)
             H, W = q.shape[1:3]  # downsampled shape
             q = q.reshape(B, H * W, self.num_heads, -1)
 
@@ -96,7 +101,7 @@ class MultiScaleBlock(nn.Module):
 
         if isinstance(norm_layer, str):
             norm_layer = partial(getattr(nn, norm_layer), eps=1e-6)
-
+        # self.proj = nn.Linear(dim, dim_out)
         self.dim = dim
         self.dim_out = dim_out
         self.norm1 = norm_layer(dim)
@@ -128,15 +133,25 @@ class MultiScaleBlock(nn.Module):
 
         if dim != dim_out:
             self.proj = nn.Linear(dim, dim_out)
-
+        else:
+            self.proj = nn.Identity()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         shortcut = x  # B, H, W, C
         x = self.norm1(x)
 
         # Skip connection
         if self.dim != self.dim_out:
-            shortcut = do_pool(self.proj(x), self.pool)
-
+            y = self.proj(x)
+            if self.pool is None:
+                shortcut = y
+            else:
+                y = y.permute(0, 3, 1, 2)
+                y = self.pool(y)
+                shortcut = y.permute(0, 2, 3, 1)
+            # shortcut = do_pool(self.proj(x), self.pool)
+        pad_hw = (0, 0)
+        H = 0
+        W = 0
         # Window partition
         window_size = self.window_size
         if window_size > 0:
@@ -145,18 +160,18 @@ class MultiScaleBlock(nn.Module):
 
         # Window Attention + Q Pooling (if stage change)
         x = self.attn(x)
-        if self.q_stride:
+        if self.q_stride is not None:
             # Shapes have changed due to Q pooling
             window_size = self.window_size // self.q_stride[0]
             H, W = shortcut.shape[1:3]
 
             pad_h = (window_size - H % window_size) % window_size
             pad_w = (window_size - W % window_size) % window_size
-            pad_hw = (H + pad_h, W + pad_w)
+            pad_hw = (int(H + pad_h), int(W + pad_w))
 
         # Reverse window partition
         if self.window_size > 0:
-            x = window_unpartition(x, window_size, pad_hw, (H, W))
+            x = window_unpartition(x, window_size, pad_hw, (int(H), int(W)))
 
         x = shortcut + self.drop_path(x)
         # MLP
@@ -275,9 +290,9 @@ class Hiera(nn.Module):
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         x = self.patch_embed(x)
         # x: (B, H, W, C)
-
+        H, W = x.shape[1], x.shape[2]
         # Add pos embed
-        x = x + self._get_pos_embed(x.shape[1:3])
+        x = x + self._get_pos_embed((int(H), int(W)))
 
         outputs = []
         for i, blk in enumerate(self.blocks):
